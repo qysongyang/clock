@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="format-detection" content="telephone=no">
+    
+    <title>A Clock</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* === 1. 基础重置 === */
+        html, body {
+            margin: 0; padding: 0;
+            width: 100%; 
+            height: 100vh; 
+            height: 100dvh; 
+            overflow: hidden;
+        }
+
+        body {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            background-color: #0f172a;
+            transition: background-color 0.5s ease;
+            user-select: none;
+            -webkit-user-select: none;
+            overscroll-behavior: none;
+            touch-action: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        .font-sans-native {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+        }
+
+        /* === 2. 玻璃面板 === */
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 6px 24px rgba(0, 0, 0, 0.15);
+            transition: background 0.5s ease;
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            contain: layout paint;
+        }
+
+        @media (max-width: 768px) {
+            .glass-panel {
+                backdrop-filter: none !important;
+                -webkit-backdrop-filter: none !important;
+                background: rgba(20, 20, 25, 0.92);
+            }
+            body.light-mode .glass-panel {
+                background: rgba(245, 245, 245, 0.95);
+            }
+        }
+
+        body.low-power .glass-panel {
+            backdrop-filter: none !important;
+            -webkit-backdrop-filter: none !important;
+            background: rgba(0, 0, 0, 0.95); 
+            box-shadow: none; 
+            border-color: rgba(255,255,255,0.1);
+        }
+
+        body.light-mode { background-color: #f1f5f9; }
+        body.light-mode .glass-panel {
+            background: rgba(255, 255, 255, 0.65); 
+            border-color: rgba(255, 255, 255, 0.8); 
+            box-shadow: 0 12px 40px rgba(148, 163, 184, 0.15); 
+        }
+        body.light-mode.low-power {
+            background-color: #000000 !important;
+            color: white !important;
+        }
+        body.light-mode.low-power .glass-panel {
+            background: rgba(20, 20, 20, 0.9) !important;
+            border-color: rgba(255,255,255,0.1) !important;
+        }
+
+        /* === 指针系统 === */
+        .hand {
+            position: absolute;
+            left: 50%; bottom: 50%;
+            transform-origin: bottom center;
+            transform: translateX(-50%) rotate(0deg);
+            z-index: 10;
+            border-radius: 99px;
+        }
+
+        .hand.hour { width: 6px; height: 65px; background-color: #fff; border-radius: 4px; z-index: 11; }
+        .hand.minute { width: 4px; height: 95px; background-color: #cbd5e1; border-radius: 3px; z-index: 12; }
+        .hand.second { width: 2px; height: 110px; background-color: #ef4444; z-index: 13; }
+
+        body.low-power .hand.second { display: none; }
+
+        .light-mode .hand.hour { background-color: #334155; }
+        .light-mode .hand.minute { background-color: #64748b; }
+        body.light-mode.low-power .hand.hour { background-color: #e2e8f0 !important; }
+        body.light-mode.low-power .hand.minute { background-color: #94a3b8 !important; }
+
+        /* === 静态元素 === */
+        .marker { position: absolute; top: 0; left: 50%; width: 2px; height: 100%; pointer-events: none; }
+        .marker::after { content: ''; display: block; width: 100%; height: 8px; background-color: rgba(255,255,255,0.3); margin: 10px auto 0; }
+        .marker.main::after { height: 14px; width: 3px; background-color: rgba(255,255,255,0.8); margin-left: -0.5px; }
+        .light-mode .marker::after { background-color: rgba(0,0,0,0.15); }
+        .light-mode .marker.main::after { background-color: rgba(0,0,0,0.6); }
+        body.light-mode.low-power .marker::after { background-color: rgba(255,255,255,0.3) !important; }
+
+        .clock-number {
+            position: absolute; width: 30px; height: 30px;
+            text-align: center; line-height: 30px;
+            font-weight: 600; font-size: 14px; color: rgba(255,255,255,0.9);
+            left: 50%; top: 50%; transform: translate(-50%, -50%); 
+        }
+        .light-mode .clock-number { color: #334155; }
+        body.light-mode.low-power .clock-number { color: rgba(255,255,255,0.9) !important; }
+
+        /* === 极光背景 === */
+        #aurora-layer {
+            position: fixed; inset: 0; z-index: -1;
+            background: radial-gradient(circle at 50% 50%, #0f172a 0%, #020617 100%);
+            overflow: hidden;
+        }
+        
+        .aurora-blob {
+            position: absolute; border-radius: 50%; filter: blur(60px); opacity: 0.4;
+            display: none;
+            will-change: transform; 
+        }
+
+        @media (min-width: 769px) and (prefers-reduced-motion: no-preference) {
+            .aurora-blob { display: block; animation: float 25s infinite ease-in-out; }
+        }
+
+        body.low-power .aurora-blob { display: none !important; animation: none !important; }
+        body.low-power #aurora-layer { background: #000 !important; }
+        
+        body.light-mode #aurora-layer { background: #f1f5f9; }
+        body.light-mode .aurora-blob { opacity: 0.15; mix-blend-mode: multiply; }
+
+        @keyframes float {
+            0%, 100% { transform: translate3d(0, 0, 0); }
+            50% { transform: translate3d(30px, -30px, 0); }
+        }
+
+        /* === CSS Counter 数字时间 === */
+        #digitalTime {
+            counter-reset: h var(--h) m var(--m) s var(--s); 
+            font-feature-settings: "tnum";
+        }
+        #digitalTime::after {
+            content: counter(h, decimal-leading-zero) ":" counter(m, decimal-leading-zero) ":" counter(s, decimal-leading-zero);
+        }
+        body.low-power #digitalTime::after {
+            content: counter(h, decimal-leading-zero) ":" counter(m, decimal-leading-zero);
+        }
+
+        /* === 状态点 === */
+        .status-dot { width: 6px; height: 6px; border-radius: 50%; }
+        .status-dot.active { box-shadow: 0 0 8px currentColor; }
+        
+        .fade-in { animation: fadeIn 0.8s ease forwards; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        
+        button { cursor: pointer; }
+        button:disabled { opacity: 0.2; cursor: not-allowed; }
+    </style>
+</head>
+<body class="w-screen flex flex-col items-center justify-center text-white">
+
+    <div id="aurora-layer">
+        <div class="aurora-blob w-96 h-96 bg-indigo-600 -top-20 -left-20"></div>
+        <div class="aurora-blob w-96 h-96 bg-rose-600 -bottom-20 -right-20"></div>
+    </div>
+
+    <div class="relative glass-panel p-12 rounded-[3rem] flex flex-col items-center gap-8">
+        
+        <!-- 状态栏 -->
+        <div class="absolute top-8 left-8 flex items-center gap-2 opacity-70 text-[10px] font-mono tracking-widest z-50 group cursor-help">
+            <div id="statusDot" class="status-dot bg-yellow-400 text-yellow-400"></div>
+            <span id="statusText">INIT</span>
+            <div class="absolute top-6 left-0 w-48 bg-black/90 backdrop-blur text-white p-2 rounded text-[10px] opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-pre-line" id="debugInfo"></div>
+        </div>
+
+        <!-- 主题切换按钮 -->
+        <div class="absolute top-8 right-8 flex gap-3 z-50">
+            <button id="themeToggle" class="p-2 rounded-full hover:bg-white/10 transition-colors">
+                <svg id="sunIcon" class="w-5 h-5 hidden text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+                <svg id="moonIcon" class="w-5 h-5 text-indigo-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
+            </button>
+        </div>
+
+        <!-- 表盘 -->
+        <div class="relative w-[280px] h-[280px] rounded-full border-2 border-white/10 shadow-inner flex items-center justify-center" id="clockFace" style="contain: layout paint;">
+            <div id="markersContainer" class="absolute inset-0 pointer-events-none"></div>
+            <div id="numbersContainer" class="absolute inset-0 pointer-events-none z-10 clock-num font-sans-native"></div>
+            <div id="centerCap" class="absolute z-50 w-5 h-5 bg-white rounded-full shadow-md"></div>
+            
+            <div id="hourHand" class="hand hour"></div>
+            <div id="minuteHand" class="hand minute"></div>
+            <div id="secondHand" class="hand second"></div>
+        </div>
+
+        <!-- 信息区域 -->
+        <div class="text-center z-10 flex flex-col items-center" style="contain: layout;">
+            <div id="digitalTime" class="text-5xl font-light tracking-widest tabular-nums font-mono transition-colors"></div>
+            <div id="dateDisplay" class="text-sm opacity-50 font-medium tracking-[0.2em] mt-2 transition-colors">LOADING</div>
+            
+            <div id="weatherBox" class="flex items-center gap-2 mt-3 opacity-0 transition-opacity duration-1000">
+                <div id="weatherIcon" class="w-4 h-4 text-yellow-400"></div>
+                <div class="text-xs font-sans-native flex gap-2 opacity-70">
+                    <span id="tempDisplay">--</span>
+                    <span class="w-px h-3 bg-current opacity-20"></span>
+                    <span id="cityDisplay">...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // === 0. Polyfills ===
+        if (typeof Promise.any !== 'function') {
+            Promise.any = function(promises) {
+                return new Promise(function(resolve, reject) {
+                    var reasons = [];
+                    var pending = promises.length;
+                    if (pending === 0) return reject(new Error('All promises were rejected'));
+                    promises.forEach(function(p, i) {
+                        Promise.resolve(p).then(resolve, function(err) {
+                            reasons[i] = err;
+                            pending--;
+                            if (pending === 0) reject(new Error('All promises were rejected'));
+                        });
+                    });
+                });
+            };
+        }
+
+        // === 1. 配置与状态 ===
+        const ENABLE_NETWORK = true; 
+        const SYNC_COOLDOWN = 3600000; 
+
+        const els = {
+            h: document.getElementById('hourHand'),
+            m: document.getElementById('minuteHand'),
+            s: document.getElementById('secondHand'),
+            time: document.getElementById('digitalTime'),
+            date: document.getElementById('dateDisplay'),
+            body: document.body,
+            statusText: document.getElementById('statusText'),
+            statusDot: document.getElementById('statusDot'),
+            weatherBox: document.getElementById('weatherBox'),
+            weatherIcon: document.getElementById('weatherIcon'),
+            temp: document.getElementById('tempDisplay'),
+            city: document.getElementById('cityDisplay'),
+            clockFace: document.getElementById('clockFace'),
+            center: document.getElementById('centerCap'),
+            themeBtn: document.getElementById('themeToggle')
+        };
+
+        const state = {
+            offset: 0,
+            isLight: false,
+            isLowPower: false,
+            enableNetwork: true, 
+            now: new Date(),
+            sRot: 0, prevS: -1,
+            lastDateStr: '',
+            lastMinute: -1,
+            lastSecond: -1,
+            lastSyncTime: 0,
+            loopId: null,
+            weatherLoaded: false 
+        };
+
+        const pad = n => n < 10 ? '0'+n : n;
+        const dateOptions = {weekday:'short', month:'short', day:'numeric'};
+
+        // === 2. 环境感知 ===
+        function checkNetworkConfig() {
+            const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+            const isSaveData = conn && conn.saveData;
+            const isOffline = typeof navigator.onLine === 'boolean' && !navigator.onLine;
+            
+            if (isSaveData || isOffline) {
+                state.enableNetwork = false;
+                els.statusText.textContent = isOffline ? "OFFLINE" : "SAVEDATA";
+                els.statusDot.style.color = '#94a3b8'; 
+                els.statusDot.style.backgroundColor = '#94a3b8';
+                els.statusDot.classList.remove('active');
+            } else {
+                state.enableNetwork = true;
+            }
+        }
+        window.addEventListener('online', () => { checkNetworkConfig(); syncTime(); syncWeather(); });
+        window.addEventListener('offline', checkNetworkConfig);
+        checkNetworkConfig();
+
+        // === 3. 初始化 DOM ===
+        (() => {
+            const markers = document.getElementById('markersContainer');
+            const numbers = document.getElementById('numbersContainer');
+            const fragM = document.createDocumentFragment();
+            const fragN = document.createDocumentFragment();
+            
+            for (let i = 0; i < 60; i++) {
+                const el = document.createElement('div');
+                el.className = `marker ${i%5===0?'main':''}`;
+                el.style.transform = `rotate(${i*6}deg)`;
+                fragM.appendChild(el);
+            }
+            
+            for (let i = 1; i <= 12; i++) {
+                const el = document.createElement('div');
+                el.className = 'clock-number';
+                el.textContent = i;
+                const rad = i * 30 * (Math.PI/180);
+                el.style.left = `calc(50% + ${Math.sin(rad)*105}px)`;
+                el.style.top = `calc(50% + ${-Math.cos(rad)*105}px)`;
+                fragN.appendChild(el);
+            }
+            
+            markers.appendChild(fragM);
+            numbers.appendChild(fragN);
+            
+            updateWillChange();
+            window.addEventListener('resize', updateWillChange);
+        })();
+
+        function updateWillChange() {
+            const enable = !state.isLowPower && window.innerWidth > 768;
+            els.s.style.willChange = enable ? 'transform' : '';
+        }
+
+        // === 4. 核心渲染 ===
+        function renderClock() {
+            state.now.setTime(Date.now() + state.offset);
+            
+            const s = state.now.getSeconds();
+            const m = state.now.getMinutes();
+            const h = state.now.getHours();
+            const ms = state.isLowPower ? 0 : state.now.getMilliseconds();
+
+            // 1. 数字更新
+            if (s !== state.lastSecond) {
+                els.time.style.setProperty('--h', h);
+                els.time.style.setProperty('--m', m);
+                els.time.style.setProperty('--s', s);
+                state.lastSecond = s;
+            }
+
+            // 2. 时分针
+            if (m !== state.lastMinute) {
+                const rawM = m * 6 + s * 0.1;
+                const rawH = (h % 12) * 30 + m * 0.5;
+                els.m.style.transform = `translateX(-50%) rotate(${rawM}deg)`;
+                els.h.style.transform = `translateX(-50%) rotate(${rawH}deg)`;
+                state.lastMinute = m;
+            }
+
+            // 3. 秒针
+            if (!state.isLowPower) {
+                const rawS = s * 6 + ms * 0.006;
+                if (state.prevS !== -1 && state.prevS > 300 && rawS < 60) state.sRot += 360;
+                state.prevS = rawS;
+                els.s.style.transform = `translateX(-50%) rotate(${state.sRot + rawS}deg)`;
+            }
+
+            // 4. 日期
+            if (h===0 && m===0 && s===0 || state.lastDateStr === '') {
+                const dateStr = state.now.toLocaleDateString('zh-CN', dateOptions).toUpperCase().replace(/,/g,'');
+                if (dateStr !== state.lastDateStr) {
+                    els.date.textContent = dateStr;
+                    state.lastDateStr = dateStr;
+                }
+            }
+        }
+
+        // === 5. 循环控制器 ===
+        let lastDrawTime = 0;
+        const FPS_INTERVAL_NORMAL = 83; 
+        const FPS_INTERVAL_ECO = 1000; 
+
+        function startLoop() {
+            if (state.loopId) return;
+            const loop = (timestamp) => {
+                if (!state.loopId) return;
+                const interval = state.isLowPower ? FPS_INTERVAL_ECO : FPS_INTERVAL_NORMAL;
+                if (timestamp - lastDrawTime >= interval) {
+                    renderClock();
+                    lastDrawTime = timestamp;
+                }
+                state.loopId = requestAnimationFrame(loop);
+            };
+            state.loopId = requestAnimationFrame(loop);
+        }
+
+        function stopLoop() {
+            if (state.loopId) {
+                cancelAnimationFrame(state.loopId);
+                state.loopId = null;
+            }
+        }
+
+        function setLowPower(enabled) {
+            state.isLowPower = enabled;
+            updateWillChange();
+            if (enabled) {
+                els.body.classList.add('low-power');
+                els.themeBtn.disabled = true; 
+                els.themeBtn.style.opacity = '0.3';
+                if(state.isLight) {
+                    els.body.classList.remove('light-mode');
+                    state.isLight = false; 
+                }
+            } else {
+                els.body.classList.remove('low-power');
+                els.themeBtn.disabled = false;
+                els.themeBtn.style.opacity = '1';
+            }
+        }
+
+        // === 6. Battery API ===
+        if ('getBattery' in navigator) {
+            try {
+                navigator.getBattery().then(bat => {
+                    const check = () => {
+                        if (bat.level < 0.15 || (bat.level < 0.20 && !bat.charging)) {
+                            setLowPower(true);
+                            els.statusText.textContent = "ECO";
+                        } else {
+                            setLowPower(false);
+                            if (state.enableNetwork) els.statusText.textContent = "INIT";
+                        }
+                    };
+                    bat.addEventListener('levelchange', check);
+                    bat.addEventListener('chargingchange', check);
+                    check();
+                }).catch(() => {});
+            } catch(e) {}
+        }
+
+        // === 7. 网络功能 (解耦) ===
+        async function safeFetch(url, timeout = 5000) {
+            if (!state.enableNetwork) return Promise.reject('Network Disabled');
+            
+            const hasAbort = typeof AbortController !== 'undefined';
+            if (!hasAbort) return fetch(url).then(res => res.ok ? res.json() : Promise.reject(res.status));
+
+            const ctrl = new AbortController();
+            const id = setTimeout(() => ctrl.abort(), timeout);
+            try {
+                const res = await fetch(url, { signal: ctrl.signal });
+                clearTimeout(id);
+                if (!res.ok) throw new Error(res.status);
+                return await res.json();
+            } catch (e) { 
+                clearTimeout(id);
+                throw e; 
+            }
+        }
+
+        // 独立时间同步
+        async function syncTime() {
+            if(document.hidden || !state.enableNetwork) return;
+            const now = Date.now();
+            if (state.offset !== 0 && (now - state.lastSyncTime < SYNC_COOLDOWN)) return;
+
+            els.statusText.textContent = "SYNCING...";
+            els.statusDot.classList.add('active');
+            els.statusDot.style.color = '#facc15'; 
+            els.statusDot.style.backgroundColor = '#facc15';
+
+            try {
+                const timePromise = Promise.any([
+                    safeFetch('https://timeapi.io/api/Time/current/zone?timeZone=UTC'),
+                    safeFetch('https://worldtimeapi.org/api/ip'),
+                    safeFetch('https://date.jsontest.com/')
+                ]);
+                
+                const data = await timePromise;
+                let serverTime = 0;
+                
+                if (data.dateTime) serverTime = new Date(data.dateTime+'Z').getTime();
+                else if (data.datetime) serverTime = new Date(data.datetime).getTime();
+                else if (data.milliseconds_since_epoch) serverTime = data.milliseconds_since_epoch;
+                
+                if (serverTime > 0) {
+                    state.offset = serverTime - Date.now();
+                    state.lastSyncTime = Date.now();
+                    els.statusText.textContent = "ATOMIC";
+                    els.statusDot.style.color = '#34d399';
+                    els.statusDot.style.backgroundColor = '#34d399';
+                }
+            } catch (e) {
+                els.statusText.textContent = "LOCAL";
+                els.statusDot.classList.remove('active');
+                els.statusDot.style.color = '#60a5fa';
+                els.statusDot.style.backgroundColor = '#60a5fa';
+            }
+        }
+
+        // 独立天气同步
+        async function syncWeather() {
+            if (document.hidden || !state.enableNetwork || state.isLowPower) return;
+            if (state.weatherLoaded) return;
+
+            try {
+                const geo = await safeFetch('https://get.geojs.io/v1/ip/geo.json');
+                if (geo) {
+                    const w = await safeFetch(`https://api.open-meteo.com/v1/forecast?latitude=${geo.latitude}&longitude=${geo.longitude}&current_weather=true`);
+                    if (w && w.current_weather) {
+                        els.temp.textContent = `${Math.round(w.current_weather.temperature)}°C`;
+                        els.city.textContent = (geo.city || "EARTH").toUpperCase();
+                        const code = w.current_weather.weathercode;
+                        let path = 'M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z'; 
+                        if (code > 3) path = 'M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z';
+                        if (code > 50) path = 'M19 14l-7 7m0 0l-7-7m7 7V3';
+                        els.weatherIcon.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-full h-full"><path d="${path}"/></svg>`;
+                        els.weatherBox.classList.remove('opacity-0');
+                        state.weatherLoaded = true;
+                    }
+                }
+            } catch(e) {}
+        }
+
+        // === 8. 交互 ===
+        document.getElementById('themeToggle').onclick = () => {
+            if (state.isLowPower) return;
+            state.isLight = !state.isLight;
+            if (state.isLight) {
+                els.body.classList.add('light-mode', 'text-slate-600');
+                els.body.classList.remove('text-white');
+                els.center.classList.replace('bg-white', 'bg-slate-600');
+                els.clockFace.classList.replace('border-white/10', 'border-slate-400/20');
+                document.getElementById('sunIcon').classList.remove('hidden');
+                document.getElementById('moonIcon').classList.add('hidden');
+            } else {
+                els.body.classList.remove('light-mode', 'text-slate-600');
+                els.body.classList.add('text-white');
+                els.center.classList.replace('bg-slate-600', 'bg-white');
+                els.clockFace.classList.replace('border-slate-400/20', 'border-white/10');
+                document.getElementById('sunIcon').classList.add('hidden');
+                document.getElementById('moonIcon').classList.remove('hidden');
+            }
+        };
+
+        document.addEventListener("visibilitychange", () => {
+            if (document.hidden) {
+                stopLoop();
+            } else {
+                startLoop();
+                if (state.enableNetwork) {
+                    syncTime();
+                    if (!state.weatherLoaded) syncWeather(); 
+                }
+            }
+        });
+
+        // === 启动 ===
+        startLoop();
+        setTimeout(() => {
+            syncTime();
+            syncWeather();
+        }, 500); 
+
+    </script>
+</body>
+</html>
